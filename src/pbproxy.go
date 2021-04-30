@@ -2,18 +2,88 @@ package main
 
 import (
 	"bufio"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/sha1"
-	"encoding/hex"
 	"fmt"
 	"io/ioutil"
 	"net"
 	"os"
 	"strings"
-
-	"golang.org/x/crypto/pbkdf2"
 )
+
+var count = 0
+
+// https://www.linode.com/docs/guides/developing-udp-and-tcp-clients-and-servers-in-go/#create-a-concurrent-tcp-server
+// https://dev.to/alicewilliamstech/getting-started-with-sockets-in-golang-2j66
+func handleConnection(c net.Conn, desIP string, desPort string, pwd string) {
+
+	conToSsh, err := net.Dial("tcp4", desIP+":"+desPort)
+	if err != nil {
+		// fmt.Println("Cannot find this server: " + desIP + ":" + desPort)
+		msg := "Cannot find this server: " + desIP + ":" + desPort
+		c.Write([]byte(msg))
+		c.Close()
+		return
+	}
+
+	// for {
+	// 	reader := bufio.NewReader(os.Stdin)
+	// 	fmt.Print(">> ")
+	// 	text, _ := reader.ReadString('\n')
+	// 	fmt.Fprintf(c, text+"\n")
+
+	// 	message, _ := bufio.NewReader(c).ReadString('\n')
+	// 	fmt.Print("->: " + message)
+	// 	if strings.TrimSpace(string(text)) == "STOP" {
+	// 		fmt.Println("TCP client exiting...")
+	// 		return
+	// 	}
+	// }
+
+	for {
+		netData, err := bufio.NewReader(c).ReadString('\n')
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		temp := strings.TrimSpace(string(netData))
+		if temp == "STOP" {
+			break
+		}
+		if temp == "logout" {
+			break
+		}
+		// fmt.Println(temp)
+		fmt.Fprintf(conToSsh, temp+"\n")
+		messageFromSsh, _ := bufio.NewReader(conToSsh).ReadString('\n')
+		// counter := strconv.Itoa(count) + "\n"
+		c.Write([]byte(messageFromSsh))
+	}
+	c.Close()
+
+}
+
+func reversePorxy(listenPort string, desIP string, desPort string, pwd string) {
+	l, err := net.Listen("tcp4", listenPort)
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer l.Close()
+
+	for {
+		c, err := l.Accept()
+		if err != nil {
+			fmt.Println("Error connecting:", err.Error())
+			return
+		}
+		fmt.Println("Client connected.")
+
+		fmt.Println("Client " + c.RemoteAddr().String() + " connected.")
+
+		go handleConnection(c, desIP, desPort, pwd)
+		count++
+	}
+}
 
 func main() {
 	defer func() {
@@ -61,59 +131,61 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(pwdfile, destination, port)
+	fmt.Println(string(pwd), destination, port)
 	if listenport != "-1" {
 		// mode = "reverse"
 		fmt.Println("Reverse-proxy mode")
-		PORT := ":" + listenport
-		l, err := net.Listen("tcp", PORT)
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-		defer l.Close()
-		key := pbkdf2.Key([]byte(pwd), []byte("tempsalt"), 4096, 32, sha1.New)
-		nonce, _ := hex.DecodeString("64a9433eae7ccceee2fc0eda")
-		block, err := aes.NewCipher(key)
-		if err != nil {
-			panic(err.Error())
-		}
+		listenport = ":" + listenport
+		reversePorxy(listenport, destination, port, string(pwd))
+		// l, err := net.Listen("tcp", PORT)
+		// if err != nil {
+		// 	fmt.Println(err)
+		// 	return
+		// }
+		// defer l.Close()
+		// key := pbkdf2.Key([]byte(pwd), []byte("tempsalt"), 4096, 32, sha1.New)
+		// nonce, _ := hex.DecodeString("64a9433eae7ccceee2fc0eda")
+		// block, err := aes.NewCipher(key)
+		// if err != nil {
+		// 	panic(err.Error())
+		// }
 
-		aesgcm, err := cipher.NewGCM(block)
-		if err != nil {
-			panic(err.Error())
-		}
+		// aesgcm, err := cipher.NewGCM(block)
+		// if err != nil {
+		// 	panic(err.Error())
+		// }
 
-		c, err := l.Accept()
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
+		// c, err := l.Accept()
+		// if err != nil {
+		// 	fmt.Println(err)
+		// 	return
+		// }
 
-		for {
-			netData, err := bufio.NewReader(c).ReadString('\n')
-			ciphertext := []byte(netData)
-			plaintext, err := aesgcm.Open(nil, nonce, ciphertext, nil)
-			netData = fmt.Sprintf("%s", plaintext)
-			if err != nil {
-				panic(err.Error())
-			}
-			if err != nil {
-				// fmt.Println(err)
-				fmt.Println("A user disconnected. Continue to listen for other user...")
-				c, err = l.Accept()
-				continue
-			}
-			if strings.TrimSpace(string(netData)) == "STOP" {
-				fmt.Println("Exiting TCP server!")
-				return
-			}
+		// for {
+		// 	netData, err := bufio.NewReader(c).ReadString('\n')
+		// 	fmt.Print("-> ", string(netData))
+		// 	// ciphertext := []byte(netData)
+		// 	// plaintext, err := aesgcm.Open(nil, nonce, ciphertext, nil)
+		// 	// netData = fmt.Sprintf("%s", plaintext)
+		// 	if err != nil {
+		// 		panic(err.Error())
+		// 	}
+		// 	if err != nil {
+		// 		// fmt.Println(err)
+		// 		fmt.Println("A user disconnected. Continue to listen for other user...")
+		// 		c, err = l.Accept()
+		// 		continue
+		// 	}
+		// 	if strings.TrimSpace(string(netData)) == "STOP" {
+		// 		fmt.Println("Exiting TCP server!")
+		// 		return
+		// 	}
 
-			fmt.Print("-> ", string(netData))
-			// t := time.Now()
-			// myTime := t.Format(time.RFC3339) + "\n"
-			// c.Write([]byte(myTime))
-		}
+		// 	fmt.Print("-> ", string(netData))
+		// t := time.Now()
+		// myTime := t.Format(time.RFC3339) + "\n"
+		// c.Write([]byte(myTime))
+		// }
 	} else {
 		// mode = "client"
 		fmt.Println("Client mode")
@@ -130,40 +202,57 @@ func main() {
 			fmt.Println("Error: ", err)
 			return
 		}
-		key := pbkdf2.Key([]byte(pwd), []byte("tempsalt"), 4096, 32, sha1.New)
-
-		// https://pkg.go.dev/crypto/cipher#example-NewGCM-Encrypt
-		block, err := aes.NewCipher(key)
-		if err != nil {
-			panic(err.Error())
-		}
-		// Never use more than 2^32 random nonces with a given key because of the risk of a repeat.
-		// nonce := make([]byte, 12)
-		// if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		// 	panic(err.Error())
-		// }
-		nonce, _ := hex.DecodeString("64a9433eae7ccceee2fc0eda")
-
-		aesgcm, err := cipher.NewGCM(block)
-		if err != nil {
-			panic(err.Error())
-		}
+		reader := bufio.NewReader(os.Stdin)
 
 		for {
-			reader := bufio.NewReader(os.Stdin)
 			fmt.Print(">> ")
 			plaintext, _ := reader.ReadString('\n')
-			plaintext += "\n"
-			ciphertext := aesgcm.Seal(nil, nonce, []byte(plaintext), nil)
-			fmt.Fprintf(c, string(ciphertext))
+			// ciphertext := aesgcm.Seal(nil, nonce, []byte(plaintext), nil)
+			// fmt.Fprintf(c, string(ciphertext)+"\n")
+			fmt.Fprintf(c, string(plaintext))
 
-			// message, _ := bufio.NewReader(c).ReadString('\n')
-			// fmt.Print("->: " + message)
+			message, _ := bufio.NewReader(c).ReadString('\n')
+			fmt.Print("->: " + message)
 			if strings.TrimSpace(string(plaintext)) == "STOP" {
 				fmt.Println("TCP client exiting...")
-				return
+				break
 			}
 		}
+		c.Close()
+
+		// key := pbkdf2.Key([]byte(pwd), []byte("tempsalt"), 4096, 32, sha1.New)
+
+		// // https://pkg.go.dev/crypto/cipher#example-NewGCM-Encrypt
+		// block, err := aes.NewCipher(key)
+		// if err != nil {
+		// 	panic(err.Error())
+		// }
+		// // Never use more than 2^32 random nonces with a given key because of the risk of a repeat.
+		// // nonce := make([]byte, 12)
+		// // if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		// // 	panic(err.Error())
+		// // }
+		// nonce, _ := hex.DecodeString("64a9433eae7ccceee2fc0eda")
+
+		// aesgcm, err := cipher.NewGCM(block)
+		// if err != nil {
+		// 	panic(err.Error())
+		// }
+
+		// for {
+		// 	reader := bufio.NewReader(os.Stdin)
+		// 	fmt.Print(">> ")
+		// 	plaintext, _ := reader.ReadString('\n')
+		// 	ciphertext := aesgcm.Seal(nil, nonce, []byte(plaintext), nil)
+		// 	fmt.Fprintf(c, string(ciphertext)+"\n")
+
+		// 	// message, _ := bufio.NewReader(c).ReadString('\n')
+		// 	// fmt.Print("->: " + message)
+		// 	if strings.TrimSpace(string(plaintext)) == "STOP" {
+		// 		fmt.Println("TCP client exiting...")
+		// 		return
+		// 	}
+		// }
 	}
 
 }
