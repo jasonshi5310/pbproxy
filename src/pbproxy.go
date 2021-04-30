@@ -73,8 +73,9 @@ func main() {
 		for {
 			netData, err := bufio.NewReader(c).ReadString('\n')
 			if err != nil {
-				fmt.Println(err)
-				return
+				// fmt.Println(err)
+				fmt.Println("A user disconnected. Continue to listen for other user...")
+				continue
 			}
 			if strings.TrimSpace(string(netData)) == "STOP" {
 				fmt.Println("Exiting TCP server!")
@@ -100,7 +101,7 @@ func main() {
 		destIpPort := destination + ":" + port
 		c, err := net.Dial("tcp", destIpPort)
 		if err != nil {
-			fmt.Println(err)
+			fmt.Println("Error: ", err)
 			return
 		}
 
