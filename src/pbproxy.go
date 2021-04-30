@@ -11,7 +11,6 @@ import (
 	"net"
 	"os"
 	"strings"
-	"time"
 
 	"golang.org/x/crypto/pbkdf2"
 )
@@ -111,9 +110,9 @@ func main() {
 			}
 
 			fmt.Print("-> ", string(netData))
-			t := time.Now()
-			myTime := t.Format(time.RFC3339) + "\n"
-			c.Write([]byte(myTime))
+			// t := time.Now()
+			// myTime := t.Format(time.RFC3339) + "\n"
+			// c.Write([]byte(myTime))
 		}
 	} else {
 		// mode = "client"
@@ -158,8 +157,8 @@ func main() {
 			ciphertext := aesgcm.Seal(nil, nonce, []byte(plaintext), nil)
 			fmt.Fprintf(c, string(ciphertext))
 
-			message, _ := bufio.NewReader(c).ReadString('\n')
-			fmt.Print("->: " + message)
+			// message, _ := bufio.NewReader(c).ReadString('\n')
+			// fmt.Print("->: " + message)
 			if strings.TrimSpace(string(plaintext)) == "STOP" {
 				fmt.Println("TCP client exiting...")
 				return
