@@ -75,6 +75,7 @@ func main() {
 			if err != nil {
 				// fmt.Println(err)
 				fmt.Println("A user disconnected. Continue to listen for other user...")
+				c, err = l.Accept()
 				continue
 			}
 			if strings.TrimSpace(string(netData)) == "STOP" {
