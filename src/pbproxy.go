@@ -1,8 +1,12 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
+	"net"
 	"os"
+	"strings"
+	"time"
 	// "Crypto"
 )
 
@@ -52,27 +56,66 @@ func main() {
 	if listenport != "-1" {
 		// mode = "reverse"
 		fmt.Println("Reverse-proxy mode")
-		// if handle, err := pcap.OpenLive(inter_face, 1600, true, pcap.BlockForever); err != nil {
-		// 	panic(err)
-		// } else if err := handle.SetBPFFilter(expr_string); err != nil { // BPF
-		// 	panic(err)
-		// } else {
-		// 	defer handle.Close()
-		// 	// fmt.Println("Listening on " + inter_face + " [" + expr_string + "]")
-		// 	packetSource := gopacket.NewPacketSource(handle, handle.LinkType())
-		// 	for packet := range packetSource.Packets() {
-		// 		packetData := packet.Data()
-		// 		time := packet.Metadata().Timestamp
-		// 		detectDNSSpoof(packetData, time)
-		// 	}
-		// }
+		PORT := ":" + listenport
+		l, err := net.Listen("tcp", PORT)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+		defer l.Close()
+
+		c, err := l.Accept()
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
+		for {
+			netData, err := bufio.NewReader(c).ReadString('\n')
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+			if strings.TrimSpace(string(netData)) == "STOP" {
+				fmt.Println("Exiting TCP server!")
+				return
+			}
+
+			fmt.Print("-> ", string(netData))
+			t := time.Now()
+			myTime := t.Format(time.RFC3339) + "\n"
+			c.Write([]byte(myTime))
+		}
 	} else {
 		// mode = "client"
 		fmt.Println("Client mode")
-		var input string
+		// var input string
+		// for {
+		// 	fmt.Scanln(&input)
+		// 	// fmt.Println(input)
+		// }
+		// The TCP server and client setup is comming from the below website
+		// https://www.linode.com/docs/guides/developing-udp-and-tcp-clients-and-servers-in-go/
+
+		destIpPort := destination + ":" + port
+		c, err := net.Dial("tcp", destIpPort)
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
+
 		for {
-			fmt.Scanln(&input)
-			// fmt.Println(input)
+			reader := bufio.NewReader(os.Stdin)
+			fmt.Print(">> ")
+			text, _ := reader.ReadString('\n')
+			fmt.Fprintf(c, text+"\n")
+
+			message, _ := bufio.NewReader(c).ReadString('\n')
+			fmt.Print("->: " + message)
+			if strings.TrimSpace(string(text)) == "STOP" {
+				fmt.Println("TCP client exiting...")
+				return
+			}
 		}
 	}
 
