@@ -13,14 +13,14 @@ var count = 0
 
 // https://www.linode.com/docs/guides/developing-udp-and-tcp-clients-and-servers-in-go/#create-a-concurrent-tcp-server
 // https://dev.to/alicewilliamstech/getting-started-with-sockets-in-golang-2j66
-func handleConnection(c net.Conn, desIP string, desPort string, pwd string) {
+func handleConnection(handleCilentConn net.Conn, desIP string, desPort string, pwd string) {
 
 	conToSsh, err := net.Dial("tcp4", desIP+":"+desPort)
 	if err != nil {
 		// fmt.Println("Cannot find this server: " + desIP + ":" + desPort)
 		msg := "Cannot find this server: " + desIP + ":" + desPort
-		c.Write([]byte(msg))
-		c.Close()
+		handleCilentConn.Write([]byte(msg))
+		handleCilentConn.Close()
 		return
 	}
 
@@ -39,7 +39,7 @@ func handleConnection(c net.Conn, desIP string, desPort string, pwd string) {
 	// }
 
 	for {
-		netData, err := bufio.NewReader(c).ReadString('\n')
+		netData, err := bufio.NewReader(handleCilentConn).ReadString('\n')
 		if err != nil {
 			fmt.Println(err)
 			return
@@ -52,13 +52,14 @@ func handleConnection(c net.Conn, desIP string, desPort string, pwd string) {
 		if temp == "logout" {
 			break
 		}
-		// fmt.Println(temp)
+		fmt.Println("client msg:" + temp)
 		fmt.Fprintf(conToSsh, temp+"\n")
 		messageFromSsh, _ := bufio.NewReader(conToSsh).ReadString('\n')
+		fmt.Println("Server msg: ", string(messageFromSsh))
 		// counter := strconv.Itoa(count) + "\n"
-		c.Write([]byte(messageFromSsh))
+		handleCilentConn.Write([]byte(messageFromSsh))
 	}
-	c.Close()
+	handleCilentConn.Close()
 
 }
 
@@ -197,7 +198,7 @@ func main() {
 		// The TCP server and client setup is comming from the below website
 		// https://www.linode.com/docs/guides/developing-udp-and-tcp-clients-and-servers-in-go/
 		destIpPort := destination + ":" + port
-		c, err := net.Dial("tcp", destIpPort)
+		clientConn, err := net.Dial("tcp", destIpPort)
 		if err != nil {
 			fmt.Println("Error: ", err)
 			return
@@ -209,16 +210,16 @@ func main() {
 			plaintext, _ := reader.ReadString('\n')
 			// ciphertext := aesgcm.Seal(nil, nonce, []byte(plaintext), nil)
 			// fmt.Fprintf(c, string(ciphertext)+"\n")
-			fmt.Fprintf(c, string(plaintext))
+			fmt.Fprintf(clientConn, string(plaintext))
 
-			message, _ := bufio.NewReader(c).ReadString('\n')
+			message, _ := bufio.NewReader(clientConn).ReadString('\n')
 			fmt.Print("->: " + message)
 			if strings.TrimSpace(string(plaintext)) == "STOP" {
 				fmt.Println("TCP client exiting...")
 				break
 			}
 		}
-		c.Close()
+		clientConn.Close()
 
 		// key := pbkdf2.Key([]byte(pwd), []byte("tempsalt"), 4096, 32, sha1.New)
 
