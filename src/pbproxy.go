@@ -1,17 +1,47 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
+	"io"
 	"io/ioutil"
+	"log"
 	"net"
 	"os"
-	"strings"
 )
 
-var count = 0
+// https://github.com/vfedoroff/go-netcat/blob/87e3e79d77ee6a0b236a784be83759a4d002a20d/main.go#L16
+func stream_copy(src io.Reader, dst io.Writer) <-chan int {
+	buf := make([]byte, 1024)
+	sync_channel := make(chan int)
+	go func() {
+		defer func() {
+			if con, ok := dst.(net.Conn); ok {
+				con.Close()
+				log.Printf("Connection from %v is closed\n", con.RemoteAddr())
+			}
+			sync_channel <- 0 // Notify that processing is finished
+		}()
+		for {
+			var nBytes int
+			var err error
+			nBytes, err = src.Read(buf)
+			if string(buf) == "logout" || string(buf) == "exit" {
+				break
+			} else if err != nil {
+				// if err != io.EOF {
+				// 	log.Printf("Read error: %s\n", err)
+				// }
+				break
+			}
+			_, err = dst.Write(buf[0:nBytes])
+			if err != nil {
+				log.Fatalf("Write error: %s\n", err)
+			}
+		}
+	}()
+	return sync_channel
+}
 
-// https://www.linode.com/docs/guides/developing-udp-and-tcp-clients-and-servers-in-go/#create-a-concurrent-tcp-server
 // https://dev.to/alicewilliamstech/getting-started-with-sockets-in-golang-2j66
 func handleConnection(handleCilentConn net.Conn, desIP string, desPort string, pwd string) {
 
@@ -24,45 +54,19 @@ func handleConnection(handleCilentConn net.Conn, desIP string, desPort string, p
 		return
 	}
 
-	// for {
-	// 	reader := bufio.NewReader(os.Stdin)
-	// 	fmt.Print(">> ")
-	// 	text, _ := reader.ReadString('\n')
-	// 	fmt.Fprintf(c, text+"\n")
-
-	// 	message, _ := bufio.NewReader(c).ReadString('\n')
-	// 	fmt.Print("->: " + message)
-	// 	if strings.TrimSpace(string(text)) == "STOP" {
-	// 		fmt.Println("TCP client exiting...")
-	// 		return
-	// 	}
-	// }
-
-	for {
-		netData, err := bufio.NewReader(handleCilentConn).ReadString('\n')
-		if err != nil {
-			fmt.Println(err)
-			return
-		}
-
-		temp := strings.TrimSpace(string(netData))
-		if temp == "STOP" {
-			break
-		}
-		if temp == "logout" {
-			break
-		}
-		fmt.Println("client msg:" + temp)
-		fmt.Fprintf(conToSsh, temp+"\n")
-		messageFromSsh, _ := bufio.NewReader(conToSsh).ReadString('\n')
-		fmt.Println("Server msg: ", string(messageFromSsh))
-		// counter := strconv.Itoa(count) + "\n"
-		handleCilentConn.Write([]byte(messageFromSsh))
+	chan_to_ssh := stream_copy(handleCilentConn, conToSsh)
+	chan_to_client := stream_copy(conToSsh, handleCilentConn)
+	select {
+	case <-chan_to_ssh:
+		log.Println("SSH is closed")
+	case <-chan_to_client:
+		log.Println("Client is terminated")
 	}
 	handleCilentConn.Close()
 
 }
 
+// https://www.linode.com/docs/guides/developing-udp-and-tcp-clients-and-servers-in-go/#create-a-concurrent-tcp-server
 func reversePorxy(listenPort string, desIP string, desPort string, pwd string) {
 	l, err := net.Listen("tcp4", listenPort)
 	if err != nil {
@@ -82,14 +86,13 @@ func reversePorxy(listenPort string, desIP string, desPort string, pwd string) {
 		fmt.Println("Client " + c.RemoteAddr().String() + " connected.")
 
 		go handleConnection(c, desIP, desPort, pwd)
-		count++
 	}
 }
 
 func main() {
 	defer func() {
 		if r := recover(); r != nil {
-			fmt.Println("", r)
+			fmt.Println(r)
 		}
 	}()
 	// fmt.Println("Hello world!")
@@ -132,128 +135,35 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Println(string(pwd), destination, port)
+	// fmt.Println(string(pwd), destination, port)
 	if listenport != "-1" {
 		// mode = "reverse"
 		fmt.Println("Reverse-proxy mode")
 		listenport = ":" + listenport
 		reversePorxy(listenport, destination, port, string(pwd))
-		// l, err := net.Listen("tcp", PORT)
-		// if err != nil {
-		// 	fmt.Println(err)
-		// 	return
-		// }
-		// defer l.Close()
-		// key := pbkdf2.Key([]byte(pwd), []byte("tempsalt"), 4096, 32, sha1.New)
-		// nonce, _ := hex.DecodeString("64a9433eae7ccceee2fc0eda")
-		// block, err := aes.NewCipher(key)
-		// if err != nil {
-		// 	panic(err.Error())
-		// }
-
-		// aesgcm, err := cipher.NewGCM(block)
-		// if err != nil {
-		// 	panic(err.Error())
-		// }
-
-		// c, err := l.Accept()
-		// if err != nil {
-		// 	fmt.Println(err)
-		// 	return
-		// }
-
-		// for {
-		// 	netData, err := bufio.NewReader(c).ReadString('\n')
-		// 	fmt.Print("-> ", string(netData))
-		// 	// ciphertext := []byte(netData)
-		// 	// plaintext, err := aesgcm.Open(nil, nonce, ciphertext, nil)
-		// 	// netData = fmt.Sprintf("%s", plaintext)
-		// 	if err != nil {
-		// 		panic(err.Error())
-		// 	}
-		// 	if err != nil {
-		// 		// fmt.Println(err)
-		// 		fmt.Println("A user disconnected. Continue to listen for other user...")
-		// 		c, err = l.Accept()
-		// 		continue
-		// 	}
-		// 	if strings.TrimSpace(string(netData)) == "STOP" {
-		// 		fmt.Println("Exiting TCP server!")
-		// 		return
-		// 	}
-
-		// 	fmt.Print("-> ", string(netData))
-		// t := time.Now()
-		// myTime := t.Format(time.RFC3339) + "\n"
-		// c.Write([]byte(myTime))
-		// }
 	} else {
 		// mode = "client"
-		fmt.Println("Client mode")
-		// var input string
-		// for {
-		// 	fmt.Scanln(&input)
-		// 	// fmt.Println(input)
-		// }
+		// fmt.Println("Client mode")
 		// The TCP server and client setup is comming from the below website
 		// https://www.linode.com/docs/guides/developing-udp-and-tcp-clients-and-servers-in-go/
 		destIpPort := destination + ":" + port
-		clientConn, err := net.Dial("tcp", destIpPort)
+		clientConn, err := net.Dial("tcp4", destIpPort)
 		if err != nil {
 			fmt.Println("Error: ", err)
 			return
 		}
-		reader := bufio.NewReader(os.Stdin)
-
-		for {
-			fmt.Print(">> ")
-			plaintext, _ := reader.ReadString('\n')
-			// ciphertext := aesgcm.Seal(nil, nonce, []byte(plaintext), nil)
-			// fmt.Fprintf(c, string(ciphertext)+"\n")
-			fmt.Fprintf(clientConn, string(plaintext))
-
-			message, _ := bufio.NewReader(clientConn).ReadString('\n')
-			fmt.Print("->: " + message)
-			if strings.TrimSpace(string(plaintext)) == "STOP" {
-				fmt.Println("TCP client exiting...")
-				break
-			}
+		localSsh_to_reverse := stream_copy(os.Stdin, clientConn)
+		reverse_to_client := stream_copy(clientConn, os.Stdout)
+		select {
+		case <-localSsh_to_reverse:
+			// log.Println("Local SSH is closed")
+		case <-reverse_to_client:
+			// log.Println("Local Client is terminated")
 		}
-		clientConn.Close()
 
 		// key := pbkdf2.Key([]byte(pwd), []byte("tempsalt"), 4096, 32, sha1.New)
 
 		// // https://pkg.go.dev/crypto/cipher#example-NewGCM-Encrypt
-		// block, err := aes.NewCipher(key)
-		// if err != nil {
-		// 	panic(err.Error())
-		// }
-		// // Never use more than 2^32 random nonces with a given key because of the risk of a repeat.
-		// // nonce := make([]byte, 12)
-		// // if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
-		// // 	panic(err.Error())
-		// // }
-		// nonce, _ := hex.DecodeString("64a9433eae7ccceee2fc0eda")
-
-		// aesgcm, err := cipher.NewGCM(block)
-		// if err != nil {
-		// 	panic(err.Error())
-		// }
-
-		// for {
-		// 	reader := bufio.NewReader(os.Stdin)
-		// 	fmt.Print(">> ")
-		// 	plaintext, _ := reader.ReadString('\n')
-		// 	ciphertext := aesgcm.Seal(nil, nonce, []byte(plaintext), nil)
-		// 	fmt.Fprintf(c, string(ciphertext)+"\n")
-
-		// 	// message, _ := bufio.NewReader(c).ReadString('\n')
-		// 	// fmt.Print("->: " + message)
-		// 	if strings.TrimSpace(string(plaintext)) == "STOP" {
-		// 		fmt.Println("TCP client exiting...")
-		// 		return
-		// 	}
-		// }
 	}
 
 }
