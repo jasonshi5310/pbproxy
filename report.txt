@@ -1,0 +1,60 @@
+cse508hw3
+Name: Minqi Shi
+ID: 111548035
+Client OS: Ubuntu 20.04.2 LTS
+Server OS: Kali 2021.1
+
+pbproxy.go is in src folder.
+
+To run the server side program, do (on the server):
+    go run ./src/pbproxy.go -l listenport -p pwdfile destination port
+
+To run the client side program, do (on the client):
+    ssh -o "ProxyCommand go run ./src/pbproxy.go -p pwdfile destination port" localhost [-l username]
+
+First the program would validate all the input and see if the user wants to 
+act as a client-side proxy or a server-side reverse proxy. This is done by 
+checking whether the user provides the -l flag.
+
+Server side:
+1. Create a socket for clients and bind it to the listenport given from user input
+2. Listen at listenport for clients to make an connection
+3. Accept and Establish connection with the client
+4. Fork a child process 
+5. Create a socket between the server-side program to the given dst ip and port 
+   (most likely localhost and ssh port 22)
+6. Read the ciphertext sent from the client and generated the key from the 
+   salt (sent along with the ciphertext)
+7. Use the key and nonce(sent along with the ciphertext) to decrypt the ciphertext 
+8. Send the decrypted plaintext to the server's socket 
+   (i.e. the one talking to server-side ssh)
+9. Read the plaintext sent from the server's socket
+10. Generate a random 128-bit salt (Initialization Vector). Use the salt
+    and the symmetric key given to generate a new 32-byte key 
+    with pbkdf2 and sha3-512 hash.
+11. Generate a new 12-byte nonce for encryption
+12. Use the 32-byte key and 12-byte nonce to encrypt the plaintext 
+    with AES256 in GCM mode; the salt and nonce used is appended to the 
+    start of the ciphertext.
+13. Send the encrypted ciphertext to the socket for the clients
+14. Go to step 6 and loop till the client closes the connection
+
+
+Client side:
+1. Create a socket and bind it with the dst ip and port given
+2. Read the plaintext from stdin (i.e. from client-side ssh)
+3. Encrypt the plaintext in the way we have on the server-side program
+5. Send the encrypted ciphertext to the socket
+6. Read the ciphertext from the socket, decrypt it in the way we have on the
+   server-side progrom
+7. Write the plaintext to stdout (i.e. to client-side ssh)
+8. Go to step 2 and loop till the user terminates the program
+
+
+
+References:
+    https://www.gregorygaines.com/blog/posts/2020/6/11/how-to-hash-and-salt-passwords-in-golang-using-sha512-and-why-you-shouldnt#3
+    https://github.com/vfedoroff/go-netcat/blob/87e3e79d77ee6a0b236a784be83759a4d002a20d/main.go#L16
+    https://tutorialedge.net/golang/go-encrypt-decrypt-aes-tutorial/
+    https://dev.to/alicewilliamstech/getting-started-with-sockets-in-golang-2j66
+    https://www.linode.com/docs/guides/developing-udp-and-tcp-clients-and-servers-in-go/#create-a-concurrent-tcp-server

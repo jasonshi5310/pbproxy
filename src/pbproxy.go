@@ -244,10 +244,8 @@ func main() {
 	port = argv[optind+1]
 	pwd, err := ioutil.ReadFile(pwdfile)
 	if err != nil {
-		fmt.Print("PWDFILE: ", pwdfile)
 		panic(err)
 	}
-	// fmt.Println(string(pwd), destination, port)
 	if listenport != "-1" {
 		// mode = "reverse"
 		fmt.Println("Reverse-proxy mode")
